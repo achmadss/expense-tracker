@@ -1,25 +1,4 @@
 services:
-  expense-tracker-bot:
-    build:
-      context: ./expense-tracker-bot
-    env_file:
-      - ./expense-tracker-bot/.env
-    environment:
-      - NODE_ENV=production
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=expense_tracker
-      - DB_USER=expenseuser
-      - DB_PASSWORD=expensepass
-      - LITELLM_URL=http://litellm:4000/v1/chat/completions
-      - OCR_URL=http://ocr-api:8000/ocr/tesseract/url
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-    networks:
-      - home
-    depends_on:
-      - postgres
-      - rabbitmq
-
   nextjs:
     build:
       context: ./nextjs
@@ -79,7 +58,7 @@ services:
       timeout: 10s
       retries: 3
 
-  ocr-api:
+  ocr:
     build:
       context: ./ocr
       dockerfile: Dockerfile
@@ -100,8 +79,8 @@ services:
     ports:
       - "4000:4000"
     environment:
-      DATABASE_URL: "postgresql://llmproxy:dbpassword9090@litellm_db:5432/litellm"
-      STORE_MODEL_IN_DB: "True"
+      - DATABASE_URL=postgresql://llmproxy:dbpassword9090@litellm_db:5432/litellm
+      - STORE_MODEL_IN_DB=True
     env_file:
       - ./litellm/.env
     networks:
@@ -109,9 +88,7 @@ services:
     depends_on:
       - litellm_db
     healthcheck:
-      test:
-        - CMD-SHELL
-        - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -142,8 +119,7 @@ services:
       POSTGRES_USER: expenseuser
       POSTGRES_PASSWORD: expensepass
     volumes:
-      - expense_bot_data:/var/lib/postgresql/data
-      - ./expense-tracker-bot/database.sql:/docker-entrypoint-initdb.d/init.sql
+      - expense_tracker_data:/var/lib/postgresql/data
     networks:
       - home
     healthcheck:
@@ -152,8 +128,23 @@ services:
       timeout: 5s
       retries: 10
 
+  discord_bot:
+    build:
+      context: ./discord-bot
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - RABBITMQ_QUEUE=expense_processing
+      - RABBITMQ_REPLY_QUEUE=expense_results
+    networks:
+      - home
+    depends_on:
+      - rabbitmq
+
 volumes:
-  expense_bot_data:
+  expense_tracker_data:
     driver: local
   litellm_postgres_data:
     name: litellm_postgres_data
@@ -165,4 +156,4 @@ volumes:
 
 networks:
   home:
-    external: true
+    driver: bridge
