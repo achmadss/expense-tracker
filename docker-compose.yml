@@ -1,0 +1,103 @@
+services:
+  expense-tracker-bot:
+    build:
+      context: ./expense-tracker-bot
+    env_file:
+      - ./expense-tracker-bot/.env
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=expense_tracker
+      - DB_USER=expenseuser
+      - DB_PASSWORD=expensepass
+      - LITELLM_URL=http://litellm:4000/v1/chat/completions
+      - OCR_URL=http://ocr-api:8000/ocr/tesseract/url
+    networks:
+      - home
+    depends_on:
+      - postgres
+
+  ocr-api:
+    build:
+      context: ./ocr
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - home
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  litellm:
+    image: docker.litellm.ai/berriai/litellm:main-stable
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: "postgresql://llmproxy:dbpassword9090@litellm_db:5432/litellm"
+      STORE_MODEL_IN_DB: "True"
+    env_file:
+      - ./litellm/.env
+    networks:
+      - home
+    depends_on:
+      - litellm_db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  litellm_db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: llmproxy
+      POSTGRES_PASSWORD: dbpassword9090
+    volumes:
+      - litellm_postgres_data:/var/lib/postgresql/data
+    networks:
+      - home
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d litellm -U llmproxy"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: expense_tracker
+      POSTGRES_USER: expenseuser
+      POSTGRES_PASSWORD: expensepass
+    volumes:
+      - expense_bot_data:/var/lib/postgresql/data
+      - ./expense-tracker-bot/database.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - home
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d expense_tracker -U expenseuser"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  expense_bot_data:
+    driver: local
+  litellm_postgres_data:
+    name: litellm_postgres_data
+    driver: local
+
+networks:
+  home:
+    external: true
