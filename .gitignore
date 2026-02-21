@@ -1,3 +1,4 @@
 .ruff_cache
 .env
 ollama/data
+node_modules

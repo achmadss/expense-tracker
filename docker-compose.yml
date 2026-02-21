@@ -13,10 +13,71 @@ services:
       - DB_PASSWORD=expensepass
       - LITELLM_URL=http://litellm:4000/v1/chat/completions
       - OCR_URL=http://ocr-api:8000/ocr/tesseract/url
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     networks:
       - home
     depends_on:
       - postgres
+      - rabbitmq
+
+  nextjs:
+    build:
+      context: ./nextjs
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://expenseuser:expensepass@postgres:5432/expense_tracker
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - RABBITMQ_QUEUE=expense_processing
+      - RABBITMQ_REPLY_QUEUE=expense_results
+      - OCR_SERVICE_URL=http://ocr-api:8000
+      - LLM_SERVICE_URL=http://litellm:4000
+      - OBJECT_STORAGE_URL=http://minio:9000
+      - OBJECT_STORAGE_KEY=minioadmin
+      - OBJECT_STORAGE_SECRET=minioadmin
+    networks:
+      - home
+    depends_on:
+      - rabbitmq
+      - minio
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - home
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - home
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   ocr-api:
     build:
@@ -96,6 +157,10 @@ volumes:
     driver: local
   litellm_postgres_data:
     name: litellm_postgres_data
+    driver: local
+  rabbitmq_data:
+    driver: local
+  minio_data:
     driver: local
 
 networks:
