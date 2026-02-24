@@ -8,24 +8,25 @@ datasource db {
 }
 
 model Expense {
-  id            String   @id @default(uuid())
-  messageId     String?
-  userId        String
-  userTag       String
-  text          String
-  imageUrls     String[]
-  channelId     String?
-  isDm          Boolean  @default(false)
-  ocrText       String?
-  extractedData String?
-  status        ExpenseStatus @default(unprocessed)
-  timestamp     DateTime
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String        @id @default(uuid())
+  messageId        String?
+  userId           String
+  userTag          String
+  text             String
+  imageUrls        String[]
+  channelId        String?
+  isDm             Boolean       @default(false)
+  ocrText          String?
+  extractedData    String?
+  interactionToken String?
+  status           ExpenseStatus @default(pending)
+  timestamp        DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 }
 
 enum ExpenseStatus {
-  unprocessed
+  pending
   processing
   completed
   failed

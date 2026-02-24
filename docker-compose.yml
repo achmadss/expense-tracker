@@ -142,9 +142,10 @@ services:
     environment:
       - NODE_ENV=production
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - APPLICATION_ID=${APPLICATION_ID}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-      - RABBITMQ_QUEUE=expense_processing
       - RABBITMQ_REPLY_QUEUE=expense_results
+      - NEXTJS_API_URL=http://nextjs:3000
     networks:
       - home
     depends_on:

@@ -1,12 +1,13 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, WebhookClient } = require('discord.js');
 const amqp = require('amqplib');
 
 const {
   DISCORD_TOKEN,
   RABBITMQ_URL,
-  RABBITMQ_QUEUE,
   RABBITMQ_REPLY_QUEUE,
+  NEXTJS_API_URL,
+  APPLICATION_ID,
 } = process.env;
 
 const client = new Client({
@@ -18,7 +19,6 @@ const client = new Client({
 });
 
 let channel = null;
-const pendingRequests = new Map();
 
 async function setupRabbitMQ(retries = 10, delay = 3000) {
   for (let i = 0; i < retries; i++) {
@@ -26,24 +26,18 @@ async function setupRabbitMQ(retries = 10, delay = 3000) {
       const connection = await amqp.connect(RABBITMQ_URL);
       channel = await connection.createChannel();
 
-      await channel.assertQueue(RABBITMQ_QUEUE, { durable: true });
       await channel.assertQueue(RABBITMQ_REPLY_QUEUE, { durable: true });
 
-      channel.consume(RABBITMQ_REPLY_QUEUE, (msg) => {
+      channel.consume(RABBITMQ_REPLY_QUEUE, async (msg) => {
         if (msg) {
-          const data = JSON.parse(msg.content.toString());
-          const { messageId, status } = data;
+          const { interactionToken, status } = JSON.parse(msg.content.toString());
 
-          const pending = pendingRequests.get(messageId);
-          if (pending) {
-            const { interaction } = pending;
-            if (status === 'success') {
-              interaction.editReply('Success! Your expense has been processed.').catch(console.error);
-            } else {
-              interaction.editReply('Failed to process your request. Please try again.').catch(console.error);
-            }
-            pendingRequests.delete(messageId);
-          }
+          const content = status === 'success'
+            ? 'Success! Your expense has been processed.'
+            : 'Failed to process your request. Please try again.';
+
+          const webhook = new WebhookClient({ id: APPLICATION_ID, token: interactionToken });
+          await webhook.editMessage('@original', { content }).catch(console.error);
 
           channel.ack(msg);
         }
@@ -57,11 +51,6 @@ async function setupRabbitMQ(retries = 10, delay = 3000) {
     }
   }
   throw new Error('Failed to connect to RabbitMQ after retries');
-}
-
-async function publishExpense(data) {
-  const message = Buffer.from(JSON.stringify(data));
-  channel.sendToQueue(RABBITMQ_QUEUE, message, { persistent: true });
 }
 
 async function registerCommands() {
@@ -123,6 +112,8 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
+  await interaction.deferReply();
+
   const messageId = interaction.id;
   const userId = interaction.user.id;
   const userTag = `${interaction.user.username}#${interaction.user.discriminator}`;
@@ -131,10 +122,7 @@ client.on('interactionCreate', async (interaction) => {
   const channelId = interaction.channelId;
   const isDm = interaction.guildId === null;
   const timestamp = new Date().toISOString();
-
-  await interaction.reply('Your request is being processed...');
-
-  pendingRequests.set(messageId, { interaction });
+  const interactionToken = interaction.token;
 
   const expenseData = {
     messageId,
@@ -145,15 +133,24 @@ client.on('interactionCreate', async (interaction) => {
     channelId,
     isDm,
     timestamp,
+    interactionToken,
   };
 
   try {
-    await publishExpense(expenseData);
-    console.log(`Published expense for message ${messageId}`);
+    const res = await fetch(`${NEXTJS_API_URL}/api/expenses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(expenseData),
+    });
+
+    if (!res.ok) {
+      throw new Error(`API error: ${res.status}`);
+    }
+
+    console.log(`Submitted expense for message ${messageId}`);
   } catch (error) {
-    console.error('Failed to publish expense:', error);
+    console.error('Failed to submit expense:', error);
     await interaction.editReply('Failed to process your request. Please try again.');
-    pendingRequests.delete(messageId);
   }
 });
 

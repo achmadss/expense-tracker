@@ -22,17 +22,17 @@ async function downloadFromUrl(url: string) {
   const response = await fetch(url);
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  
+
   const contentType = response.headers.get('content-type') || 'application/octet-stream';
   const urlParts = url.split('/');
   const filename = urlParts[urlParts.length - 1].split('?')[0] || 'receipt';
-  
+
   return { buffer, contentType, filename };
 }
 
 async function uploadToStorage(buffer: Buffer, filename: string, contentType: string) {
   const key = `receipts/${Date.now()}-${filename}`;
-  
+
   await s3Client.send(new PutObjectCommand({
     Bucket: BUCKET_NAME,
     Key: key,
@@ -110,7 +110,7 @@ async function callLlmService(text: string) {
         { role: 'user', content: text },
       ],
     }, {
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'x-litellm-api-key': process.env.LITELLM_API_KEY || '',
       },
@@ -128,34 +128,22 @@ async function callLlmService(text: string) {
   }
 }
 
-interface ExpenseData {
+interface ExpenseMessage {
+  expenseId: string;
   messageId: string;
-  userId: string;
-  userTag: string;
+  interactionToken: string;
   text: string;
   imageUrls: string[];
-  channelId: string;
-  isDm: boolean;
-  timestamp: string;
 }
 
-async function processExpense(data: ExpenseData) {
-  const { messageId, userId, userTag, text, imageUrls, timestamp } = data;
-  let expenseId: string | null = null;
+async function processExpense(data: ExpenseMessage) {
+  const { expenseId, messageId, interactionToken, text, imageUrls } = data;
 
   try {
-    const expense = await prisma.expense.create({
-      data: {
-        messageId,
-        userId,
-        userTag,
-        text,
-        imageUrls: [],
-        status: 'processing',
-        timestamp: new Date(timestamp),
-      },
+    await prisma.expense.update({
+      where: { id: expenseId },
+      data: { status: 'processing' },
     });
-    expenseId = expense.id;
 
     const storageUrls: string[] = [];
     for (const url of imageUrls) {
@@ -178,7 +166,7 @@ async function processExpense(data: ExpenseData) {
     const extractedData = await callLlmService(combinedText);
 
     await prisma.expense.update({
-      where: { id: expense.id },
+      where: { id: expenseId },
       data: {
         imageUrls: storageUrls,
         ocrText: ocrText.trim(),
@@ -187,30 +175,34 @@ async function processExpense(data: ExpenseData) {
       },
     });
 
-    await publishResult(messageId, 'success', { expenseId: expense.id });
+    await publishResult(messageId, interactionToken, 'success', { expenseId });
   } catch (error) {
     console.error('Error processing expense:', error);
-    
-    if (expenseId) {
-      await prisma.expense.update({
-        where: { id: expenseId },
-        data: { status: 'failed' },
-      }).catch(() => {});
-    }
 
-    await publishResult(messageId, 'failed', null, (error as Error).message);
+    await prisma.expense.update({
+      where: { id: expenseId },
+      data: { status: 'failed' },
+    }).catch(() => {});
+
+    await publishResult(messageId, interactionToken, 'failed', null, (error as Error).message);
   }
 }
 
-async function publishResult(messageId: string, status: string, result: object | null, error: string | null = null) {
+async function publishResult(
+  messageId: string,
+  interactionToken: string,
+  status: string,
+  result: object | null,
+  error: string | null = null,
+) {
   const connection = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
   const channel = await connection.createChannel();
-  
+
   await channel.assertQueue(process.env.RABBITMQ_REPLY_QUEUE || 'expense_results', { durable: true });
-  
-  const message = Buffer.from(JSON.stringify({ messageId, status, result, error }));
+
+  const message = Buffer.from(JSON.stringify({ messageId, interactionToken, status, result, error }));
   channel.sendToQueue(process.env.RABBITMQ_REPLY_QUEUE || 'expense_results', message, { persistent: true });
-  
+
   await channel.close();
   await connection.close();
 }
@@ -262,9 +254,9 @@ async function start() {
   await initBucket();
 
   const channel = await connectWithRetry();
-  
+
   console.log('Waiting for messages...');
-  
+
   channel.consume(process.env.RABBITMQ_QUEUE || 'expense_processing', async (msg) => {
     if (msg) {
       try {

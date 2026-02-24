@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { publishToQueue } from '@/lib/rabbitmq';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -56,11 +57,18 @@ export async function POST(request: NextRequest) {
         imageUrls: body.imageUrls || [],
         channelId: body.channelId,
         isDm: body.isDm || false,
-        ocrText: body.ocrText,
-        extractedData: body.extractedData ? JSON.stringify(body.extractedData) : null,
-        status: body.status || 'unprocessed',
+        interactionToken: body.interactionToken,
+        status: 'pending',
         timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
       },
+    });
+
+    await publishToQueue(process.env.RABBITMQ_QUEUE || 'expense_processing', {
+      expenseId: expense.id,
+      messageId: expense.messageId,
+      interactionToken: expense.interactionToken,
+      text: expense.text,
+      imageUrls: body.imageUrls || [],
     });
 
     return NextResponse.json(expense, { status: 201 });
