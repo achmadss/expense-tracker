@@ -48,7 +48,7 @@ async function callOcrService(imageUrl: string) {
     const response = await axios.post(`${process.env.OCR_SERVICE_URL}/ocr/tesseract/url`, {
       url: imageUrl,
     });
-    return response.data.text || '';
+    return response.data.content || '';
   } catch (error) {
     console.error('OCR service error:', error);
     return '';
