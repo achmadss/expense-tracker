@@ -15,6 +15,7 @@ services:
       - LLM_SERVICE_URL=http://litellm:4000
       - LITELLM_API_KEY=${LITELLM_API_KEY}
       - OBJECT_STORAGE_URL=http://minio:9000
+      - PUBLIC_OBJECT_STORAGE_URL=${PUBLIC_OBJECT_STORAGE_URL:-http://localhost:9010}
       - OBJECT_STORAGE_KEY=${MINIO_ROOT_USER:-minioadmin}
       - OBJECT_STORAGE_SECRET=${MINIO_ROOT_PASSWORD:-minioadmin}
     networks:

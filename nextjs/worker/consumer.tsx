@@ -40,7 +40,7 @@ async function uploadToStorage(buffer: Buffer, filename: string, contentType: st
     ContentType: contentType,
   }));
 
-  return `${process.env.OBJECT_STORAGE_URL}/${BUCKET_NAME}/${key}`;
+  return `${process.env.PUBLIC_OBJECT_STORAGE_URL}/${BUCKET_NAME}/${key}`;
 }
 
 async function callOcrService(imageUrl: string) {
