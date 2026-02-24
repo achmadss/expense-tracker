@@ -10,16 +10,20 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - RABBITMQ_QUEUE=expense_processing
       - RABBITMQ_REPLY_QUEUE=expense_results
-      - OCR_SERVICE_URL=http://ocr-api:8000
-      - LLM_SERVICE_URL=http://litellm:4000
+      - OCR_SERVICE_URL=http://ocr:8000
+      - LLM_SERVICE_URL=http://100.67.109.3:4000
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
       - OBJECT_STORAGE_URL=http://minio:9000
-      - OBJECT_STORAGE_KEY=minioadmin
-      - OBJECT_STORAGE_SECRET=minioadmin
+      - OBJECT_STORAGE_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - OBJECT_STORAGE_SECRET=${MINIO_ROOT_PASSWORD:-minioadmin}
     networks:
       - home
     depends_on:
       - rabbitmq
       - minio
+      - postgres
+    command: >
+      sh -c "bunx prisma db push && bun run worker/consumer.tsx & bun --bun server.js"
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -40,22 +44,24 @@ services:
       retries: 3
 
   minio:
-    image: minio/minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
+    image: minio/minio:latest
+    container_name: srw-minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     networks:
       - home
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
 
   ocr:
@@ -74,42 +80,43 @@ services:
       timeout: 10s
       retries: 3
 
-  litellm:
-    image: docker.litellm.ai/berriai/litellm:main-stable
-    ports:
-      - "4000:4000"
-    environment:
-      - DATABASE_URL=postgresql://llmproxy:dbpassword9090@litellm_db:5432/litellm
-      - STORE_MODEL_IN_DB=True
-    env_file:
-      - ./litellm/.env
-    networks:
-      - home
-    depends_on:
-      - litellm_db
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+  # Using external LiteLLM at 100.67.109.3:4000
+  # litellm:
+  #   image: docker.litellm.ai/berriai/litellm:main-stable
+  #   ports:
+  #     - "4000:4000"
+  #   environment:
+  #     - DATABASE_URL=postgresql://llmproxy:dbpassword9090@litellm_db:5432/litellm
+  #     - STORE_MODEL_IN_DB=True
+  #   env_file:
+  #     - ./litellm/.env
+  #   networks:
+  #     - home
+  #   depends_on:
+  #     - litellm_db
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
 
-  litellm_db:
-    image: postgres:16
-    restart: always
-    environment:
-      POSTGRES_DB: litellm
-      POSTGRES_USER: llmproxy
-      POSTGRES_PASSWORD: dbpassword9090
-    volumes:
-      - litellm_postgres_data:/var/lib/postgresql/data
-    networks:
-      - home
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d litellm -U llmproxy"]
-      interval: 1s
-      timeout: 5s
-      retries: 10
+  # litellm_db:
+  #   image: postgres:16
+  #   restart: always
+  #   environment:
+  #     POSTGRES_DB: litellm
+  #     POSTGRES_USER: llmproxy
+  #     POSTGRES_PASSWORD: dbpassword9090
+  #   volumes:
+  #     - litellm_postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - home
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -d litellm -U llmproxy"]
+  #     interval: 1s
+  #     timeout: 5s
+  #     retries: 10
 
   postgres:
     image: postgres:16
@@ -141,14 +148,15 @@ services:
     networks:
       - home
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+
 
 volumes:
   expense_tracker_data:
     driver: local
-  litellm_postgres_data:
-    name: litellm_postgres_data
-    driver: local
+  # litellm_postgres_data:
+  #   driver: local
   rabbitmq_data:
     driver: local
   minio_data:

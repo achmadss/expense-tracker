@@ -20,34 +20,43 @@ const client = new Client({
 let channel = null;
 const pendingRequests = new Map();
 
-async function setupRabbitMQ() {
-  const connection = await amqp.connect(RABBITMQ_URL);
-  channel = await connection.createChannel();
+async function setupRabbitMQ(retries = 10, delay = 3000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const connection = await amqp.connect(RABBITMQ_URL);
+      channel = await connection.createChannel();
 
-  await channel.assertQueue(RABBITMQ_QUEUE, { durable: true });
-  await channel.assertQueue(RABBITMQ_REPLY_QUEUE, { durable: true });
+      await channel.assertQueue(RABBITMQ_QUEUE, { durable: true });
+      await channel.assertQueue(RABBITMQ_REPLY_QUEUE, { durable: true });
 
-  channel.consume(RABBITMQ_REPLY_QUEUE, (msg) => {
-    if (msg) {
-      const data = JSON.parse(msg.content.toString());
-      const { messageId, status, result, error } = data;
+      channel.consume(RABBITMQ_REPLY_QUEUE, (msg) => {
+        if (msg) {
+          const data = JSON.parse(msg.content.toString());
+          const { messageId, status } = data;
 
-      const pending = pendingRequests.get(messageId);
-      if (pending) {
-        const { interaction } = pending;
-        if (status === 'success') {
-          interaction.editReply('Success! Your expense has been processed.').catch(console.error);
-        } else {
-          interaction.editReply('Failed to process your request. Please try again.').catch(console.error);
+          const pending = pendingRequests.get(messageId);
+          if (pending) {
+            const { interaction } = pending;
+            if (status === 'success') {
+              interaction.editReply('Success! Your expense has been processed.').catch(console.error);
+            } else {
+              interaction.editReply('Failed to process your request. Please try again.').catch(console.error);
+            }
+            pendingRequests.delete(messageId);
+          }
+
+          channel.ack(msg);
         }
-        pendingRequests.delete(messageId);
-      }
+      });
 
-      channel.ack(msg);
+      console.log('RabbitMQ connected');
+      return;
+    } catch (error) {
+      console.log(`RabbitMQ not ready, retrying in ${delay}ms... (${i + 1}/${retries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-  });
-
-  console.log('RabbitMQ connected');
+  }
+  throw new Error('Failed to connect to RabbitMQ after retries');
 }
 
 async function publishExpense(data) {

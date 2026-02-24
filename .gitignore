@@ -2,3 +2,4 @@
 .env
 ollama/data
 node_modules
+nul
