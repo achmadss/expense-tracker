@@ -2,6 +2,7 @@ services:
   nextjs:
     build:
       context: ./nextjs
+    restart: unless-stopped
     ports:
       - "3100:3000"
     environment:
@@ -27,6 +28,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
+    restart: unless-stopped
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -67,6 +69,7 @@ services:
     build:
       context: ./ocr
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -81,6 +84,7 @@ services:
 
   litellm:
     image: docker.litellm.ai/berriai/litellm:main-stable
+    restart: unless-stopped
     ports:
       - "4000:4000"
     environment:
@@ -101,7 +105,7 @@ services:
 
   litellm_db:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_DB: litellm
       POSTGRES_USER: llmproxy
@@ -118,7 +122,7 @@ services:
 
   postgres:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_DB: expense_tracker
       POSTGRES_USER: expenseuser
@@ -137,6 +141,7 @@ services:
     build:
       context: ./discord-bot
       dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
       - DISCORD_TOKEN=${DISCORD_TOKEN}
