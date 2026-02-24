@@ -30,14 +30,29 @@ async function setupRabbitMQ(retries = 10, delay = 3000) {
 
       channel.consume(RABBITMQ_REPLY_QUEUE, async (msg) => {
         if (msg) {
-          const { interactionToken, status } = JSON.parse(msg.content.toString());
-
-          const content = status === 'success'
-            ? 'Success! Your expense has been processed.'
-            : 'Failed to process your request. Please try again.';
+          const { interactionToken, status, extractedData } = JSON.parse(msg.content.toString());
 
           const webhook = new WebhookClient({ id: APPLICATION_ID, token: interactionToken });
-          await webhook.editMessage('@original', { content }).catch(console.error);
+
+          if (status === 'success' && extractedData) {
+            const { items, tax, total } = extractedData;
+            let content = '**Extracted Items:**\n';
+            
+            if (items && items.length > 0) {
+              for (const item of items) {
+                content += `• ${item.name} - ${item.price.toLocaleString('id-ID')} (x${item.quantity})\n`;
+              }
+            } else {
+              content += '_No items found_\n';
+            }
+            
+            content += `\n**Tax:** ${(tax || 0).toLocaleString('id-ID')}\n`;
+            content += `**Total:** ${(total || 0).toLocaleString('id-ID')}`;
+
+            await webhook.send({ content }).catch(console.error);
+          } else {
+            await webhook.send('Failed to process your request. Please try again.').catch(console.error);
+          }
 
           channel.ack(msg);
         }
@@ -112,8 +127,6 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  await interaction.deferReply();
-
   const messageId = interaction.id;
   const userId = interaction.user.id;
   const userTag = `${interaction.user.username}#${interaction.user.discriminator}`;
@@ -147,10 +160,13 @@ client.on('interactionCreate', async (interaction) => {
       throw new Error(`API error: ${res.status}`);
     }
 
+    const expense = await res.json();
+    await interaction.reply(`Expenses submitted https://expense.achmad.dev/expenses/${expense.id}`);
+
     console.log(`Submitted expense for message ${messageId}`);
   } catch (error) {
     console.error('Failed to submit expense:', error);
-    await interaction.editReply('Failed to process your request. Please try again.');
+    await interaction.reply('Failed to process your request. Please try again.');
   }
 });
 

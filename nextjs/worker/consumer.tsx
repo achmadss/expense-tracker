@@ -175,7 +175,7 @@ async function processExpense(data: ExpenseMessage) {
       },
     });
 
-    await publishResult(messageId, interactionToken, 'success', { expenseId });
+    await publishResult(messageId, interactionToken, 'success', { expenseId }, null, extractedData);
   } catch (error) {
     console.error('Error processing expense:', error);
 
@@ -194,13 +194,14 @@ async function publishResult(
   status: string,
   result: object | null,
   error: string | null = null,
+  extractedData: object | null = null,
 ) {
   const connection = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
   const channel = await connection.createChannel();
 
   await channel.assertQueue(process.env.RABBITMQ_REPLY_QUEUE || 'expense_results', { durable: true });
 
-  const message = Buffer.from(JSON.stringify({ messageId, interactionToken, status, result, error }));
+  const message = Buffer.from(JSON.stringify({ messageId, interactionToken, status, result, error, extractedData }));
   channel.sendToQueue(process.env.RABBITMQ_REPLY_QUEUE || 'expense_results', message, { persistent: true });
 
   await channel.close();
