@@ -12,6 +12,11 @@ async function getExpense(id: string) {
   });
 }
 
+function parseExtracted(raw: string | null) {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 export default async function EditExpensePage({ params }: Props) {
   const { id } = await params;
   const expense = await getExpense(id);
@@ -19,6 +24,8 @@ export default async function EditExpensePage({ params }: Props) {
   if (!expense) {
     notFound();
   }
+
+  const extractedData = parseExtracted(expense.extractedData);
 
   const initialData = {
     id: expense.id,
@@ -30,6 +37,7 @@ export default async function EditExpensePage({ params }: Props) {
     channelId: expense.channelId || '',
     isDm: expense.isDm || false,
     timestamp: expense.timestamp ? new Date(expense.timestamp).toISOString().slice(0, 16) : '',
+    extractedData,
   };
 
   return (

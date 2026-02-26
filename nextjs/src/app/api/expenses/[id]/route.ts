@@ -27,18 +27,26 @@ export async function PUT(
   try {
     const body = await request.json();
     
+    const updateData: Record<string, unknown> = {
+      messageId: body.messageId,
+      userId: body.userId,
+      userTag: body.userTag,
+      text: body.text,
+      imageUrls: body.imageUrls || [],
+      channelId: body.channelId,
+      isDm: body.isDm || false,
+      timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
+    };
+
+    if (body.extractedData !== undefined) {
+      updateData.extractedData = typeof body.extractedData === 'string' 
+        ? body.extractedData 
+        : JSON.stringify(body.extractedData);
+    }
+
     const expense = await prisma.expense.update({
       where: { id },
-      data: {
-        messageId: body.messageId,
-        userId: body.userId,
-        userTag: body.userTag,
-        text: body.text,
-        imageUrls: body.imageUrls || [],
-        channelId: body.channelId,
-        isDm: body.isDm || false,
-        timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
-      },
+      data: updateData,
     });
 
     return NextResponse.json(expense);

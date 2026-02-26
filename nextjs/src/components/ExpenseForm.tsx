@@ -1,10 +1,16 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+
+const expenseItemSchema = z.object({
+  name: z.string().min(1, 'Item name is required'),
+  price: z.coerce.number().int().min(0),
+  quantity: z.coerce.number().int().min(1),
+});
 
 const expenseSchema = z.object({
   text: z.string().min(1, 'Description is required'),
@@ -14,12 +20,26 @@ const expenseSchema = z.object({
   channelId: z.string().optional(),
   isDm: z.boolean().optional(),
   timestamp: z.string().optional(),
+  items: z.array(expenseItemSchema).optional(),
+  tax: z.coerce.number().int().min(0).optional(),
 });
 
 type ExpenseFormData = z.infer<typeof expenseSchema>;
 
+interface ExpenseItem {
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+interface ExtractedData {
+  items?: ExpenseItem[];
+  tax?: number;
+  total?: number;
+}
+
 interface ExpenseFormProps {
-  initialData?: Partial<ExpenseFormData> & { id?: string };
+  initialData?: Partial<ExpenseFormData> & { id?: string; extractedData?: ExtractedData | null };
   mode?: 'create' | 'edit';
 }
 
@@ -28,9 +48,14 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const extracted = initialData?.extractedData;
+  const initialItems = extracted?.items || [];
+  const initialTax = extracted?.tax ?? 0;
+
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
@@ -42,12 +67,23 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
       channelId: initialData?.channelId || '',
       isDm: initialData?.isDm || false,
       timestamp: initialData?.timestamp || new Date().toISOString().slice(0, 16),
+      items: initialItems,
+      tax: initialTax,
     },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'items',
   });
 
   const onSubmit = async (data: ExpenseFormData) => {
     setIsSubmitting(true);
     setError(null);
+
+    const items = data.items ?? [];
+    const itemsTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const total = itemsTotal + (data.tax || 0);
 
     const payload = {
       text: data.text,
@@ -58,6 +94,11 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
       isDm: data.isDm || false,
       imageUrls: [],
       timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
+      extractedData: {
+        items: data.items,
+        tax: data.tax || 0,
+        total,
+      },
     };
 
     try {
@@ -80,7 +121,7 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
       if (!response.ok) throw new Error('Request failed');
 
       const expense = await response.json();
-      router.push(mode === 'create' ? `/expenses/${expense.id}` : '/expenses');
+      router.push(mode === 'create' ? `/expenses/${expense.id}` : '/');
     } catch {
       setError(mode === 'create' ? 'Failed to create expense.' : 'Failed to update expense.');
     } finally {
@@ -103,7 +144,7 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
         <input
           {...register('text')}
           type="text"
-          className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="e.g. lunch at mcdonalds, receipt from ace hardware"
         />
         {errors.text && <p className="text-red-500 text-xs mt-1">{errors.text.message}</p>}
@@ -115,7 +156,7 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
           <input
             {...register('userTag')}
             type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="user#0000"
           />
         </div>
@@ -124,7 +165,7 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
           <input
             {...register('userId')}
             type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Discord user ID"
           />
         </div>
@@ -136,7 +177,7 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
           <input
             {...register('messageId')}
             type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Discord message ID"
           />
         </div>
@@ -145,7 +186,7 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
           <input
             {...register('channelId')}
             type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Discord channel ID"
           />
         </div>
@@ -157,7 +198,7 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
           <input
             {...register('timestamp')}
             type="datetime-local"
-            className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
         <div className="flex items-center mt-6">
@@ -169,6 +210,65 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
           />
           <label htmlFor="isDm" className="ml-2 text-sm text-gray-700">From DM</label>
         </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Tax</label>
+          <input
+            {...register('tax')}
+            type="number"
+            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="0"
+          />
+      </div>
+
+      {/* Extracted Items */}
+      <div>
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-sm font-medium text-gray-700">Items</label>
+          <button
+            type="button"
+            onClick={() => append({ name: '', price: 0, quantity: 1 })}
+            className="text-xs text-blue-600 hover:text-blue-800"
+          >
+            + Add Item
+          </button>
+        </div>
+        
+        {fields.length === 0 ? (
+          <p className="text-sm text-gray-400 italic py-2">No items added</p>
+        ) : (
+          <div className="space-y-2">
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex gap-2 items-start">
+                <input
+                  {...register(`items.${index}.name` as const)}
+                  placeholder="Item name"
+                  className="flex-1 px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  {...register(`items.${index}.price` as const)}
+                  type="number"
+                  placeholder="Price"
+                  className="w-24 px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  {...register(`items.${index}.quantity` as const)}
+                  type="number"
+                  placeholder="Qty"
+                  className="w-16 px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => remove(index)}
+                  className="px-2 py-2 text-red-500 hover:text-red-700"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 pt-2">

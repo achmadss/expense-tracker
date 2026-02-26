@@ -27,6 +27,9 @@ interface Expense {
 
 interface ExpenseTableProps {
   expenses: Expense[];
+  selectedIds: Set<string>;
+  onSelectAll: (checked: boolean) => void;
+  onSelectOne: (id: string, checked: boolean) => void;
   onDelete?: (id: string) => void;
 }
 
@@ -35,7 +38,15 @@ function parseExtracted(raw: string | null): ExtractedData | null {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-export default function ExpenseTable({ expenses, onDelete }: ExpenseTableProps) {
+export default function ExpenseTable({
+  expenses,
+  selectedIds,
+  onSelectAll,
+  onSelectOne,
+  onDelete,
+}: ExpenseTableProps) {
+  const allSelected = expenses.length > 0 && expenses.every((e) => selectedIds.has(e.id));
+
   if (expenses.length === 0) {
     return (
       <div className="p-8 text-center text-gray-400">No expenses found.</div>
@@ -47,6 +58,14 @@ export default function ExpenseTable({ expenses, onDelete }: ExpenseTableProps) 
       <table className="min-w-full">
         <thead>
           <tr className="bg-gray-50 border-b text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-4 py-3 w-10">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={(e) => onSelectAll(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+            </th>
             <th className="px-4 py-3">Date</th>
             <th className="px-4 py-3">User</th>
             <th className="px-4 py-3">Description</th>
@@ -59,29 +78,40 @@ export default function ExpenseTable({ expenses, onDelete }: ExpenseTableProps) 
         <tbody className="divide-y divide-gray-100">
           {expenses.map((expense) => {
             const extracted = parseExtracted(expense.extractedData);
+            const isSelected = selectedIds.has(expense.id);
             return (
-              <tr key={expense.id} className="hover:bg-gray-50 transition-colors">
+              <tr key={expense.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`}>
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(e) => onSelectOne(expense.id, e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </td>
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                   {format(new Date(expense.timestamp), 'MMM d, yyyy')}
                 </td>
                 <td className="px-4 py-3 text-sm">
-                  <div className="font-medium text-gray-900">{expense.userTag}</div>
-                  <div className="text-xs text-gray-400">{expense.userId}</div>
+                  <div className="font-medium text-gray-800">{expense.userTag}</div>
+                  <div className="text-xs text-gray-500">{expense.userId}</div>
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-700 max-w-xs truncate">
+                <td className="px-4 py-3 text-sm text-gray-800 max-w-xs truncate">
                   {expense.text || <span className="text-gray-400 italic">no description</span>}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {extracted?.items
-                    ? <span>{extracted.items.length} item{extracted.items.length !== 1 ? 's' : ''}</span>
-                    : <span className="text-gray-400">—</span>
-                  }
+                <td className="px-4 py-3 text-sm text-gray-700">
+                  {extracted?.items ? (
+                    <span>{extracted.items.length} item{extracted.items.length !== 1 ? 's' : ''}</span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                  {extracted?.total !== undefined
-                    ? extracted.total.toLocaleString()
-                    : <span className="text-gray-400">—</span>
-                  }
+                  {extracted?.total !== undefined ? (
+                    extracted.total.toLocaleString()
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={expense.status} />

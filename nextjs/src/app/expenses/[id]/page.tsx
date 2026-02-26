@@ -38,7 +38,7 @@ export default async function ExpenseDetailPage({ params }: Props) {
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
-        <Link href="/expenses" className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-800 mb-6 text-sm">
+        <Link href="/" className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-800 mb-6 text-sm">
           <ArrowLeft className="w-4 h-4" />
           Back to Expenses
         </Link>

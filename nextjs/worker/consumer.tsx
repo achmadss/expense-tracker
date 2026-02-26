@@ -81,7 +81,7 @@ Rules:
    - "quantity" = extracted quantity.
 3. If quantity is written (e.g., "2x", "x2", "3 pcs", "x3"), extract it.
 4. If quantity is not mentioned, default quantity to 1.
-5. Do NOT compute totals per item.
+5. Do NOT compute totals per item (i.e., don't compute price * quantity for individual line items).
 6. Extract tax, service charge, or VAT if explicitly listed.
 7. Extract the final TOTAL / GRAND TOTAL / TOTAL PAYMENT if present.
 8. If TAX is not shown but TOTAL and SUBTOTAL exist, compute tax as TOTAL - SUBTOTAL.
@@ -117,9 +117,11 @@ async function callLlmService(text: string) {
     });
 
     const content = response.data.choices?.[0]?.message?.content || '{}';
+    console.log('LLM raw response:', content);
     try {
       return JSON.parse(content);
     } catch {
+      console.error('Failed to parse LLM response as JSON');
       return { items: [], tax: 0, total: 0 };
     }
   } catch (error) {
@@ -163,7 +165,14 @@ async function processExpense(data: ExpenseMessage) {
     }
 
     const combinedText = text + '\n' + ocrText;
+    console.log('Sending to LLM:', combinedText.substring(0, 500));
     const extractedData = await callLlmService(combinedText);
+
+    const itemsTotal = extractedData.items.reduce((sum: number, item: { price: number; quantity: number }) => {
+      return sum + (item.price * item.quantity);
+    }, 0);
+    const total = itemsTotal + (extractedData.tax || 0);
+    extractedData.total = total;
 
     await prisma.expense.update({
       where: { id: expenseId },

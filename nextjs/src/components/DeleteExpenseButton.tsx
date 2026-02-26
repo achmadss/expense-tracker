@@ -10,7 +10,7 @@ export default function DeleteExpenseButton({ id }: { id: string }) {
     if (!confirm('Are you sure you want to delete this expense?')) return;
     const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
     if (res.ok) {
-      router.push('/expenses');
+      router.push('/');
     } else {
       alert('Failed to delete expense.');
     }

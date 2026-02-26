@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   
   const page = parseInt(searchParams.get('page') || '1');
-  const limit = parseInt(searchParams.get('limit') || '20');
+  const limit = parseInt(searchParams.get('limit') || '10');
   const userId = searchParams.get('userId');
   const status = searchParams.get('status');
   const startDate = searchParams.get('startDate');
@@ -75,5 +75,27 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating expense:', error);
     return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'No IDs provided' }, { status: 400 });
+    }
+
+    await prisma.expense.deleteMany({
+      where: {
+        id: { in: ids },
+      },
+    });
+
+    return NextResponse.json({ success: true, deletedCount: ids.length });
+  } catch (error) {
+    console.error('Error deleting expenses:', error);
+    return NextResponse.json({ error: 'Failed to delete expenses' }, { status: 500 });
   }
 }
