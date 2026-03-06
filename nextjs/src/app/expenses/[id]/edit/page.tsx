@@ -32,6 +32,8 @@ export default async function EditExpensePage({ params }: Props) {
     messageId: expense.messageId || '',
     userId: expense.userId,
     userTag: expense.userTag,
+    description: expense.description || '',
+    aiDescription: expense.aiDescription || '',
     text: expense.text,
     imageUrls: expense.imageUrls,
     channelId: expense.channelId || '',

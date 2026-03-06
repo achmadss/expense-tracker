@@ -13,7 +13,9 @@ const expenseItemSchema = z.object({
 });
 
 const expenseSchema = z.object({
-  text: z.string().min(1, 'Description is required'),
+  description: z.string().optional(),
+  aiDescription: z.string().optional(),
+  text: z.string().min(1, 'Text is required'),
   userId: z.string().optional(),
   userTag: z.string().optional(),
   messageId: z.string().optional(),
@@ -39,7 +41,7 @@ interface ExtractedData {
 }
 
 interface ExpenseFormProps {
-  initialData?: Partial<ExpenseFormData> & { id?: string; extractedData?: ExtractedData | null };
+  initialData?: Partial<ExpenseFormData> & { id?: string; extractedData?: ExtractedData | null; description?: string; aiDescription?: string };
   mode?: 'create' | 'edit';
 }
 
@@ -60,6 +62,8 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
   } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
+      description: initialData?.description || '',
+      aiDescription: initialData?.aiDescription || '',
       text: initialData?.text || '',
       userId: initialData?.userId || '',
       userTag: initialData?.userTag || '',
@@ -86,6 +90,8 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
     const total = itemsTotal + (data.tax || 0);
 
     const payload = {
+      description: data.description || null,
+      aiDescription: data.aiDescription || null,
       text: data.text,
       userId: data.userId || 'manual',
       userTag: data.userTag || 'manual',
@@ -139,13 +145,38 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Description <span className="text-red-500">*</span>
+          Short Description
         </label>
         <input
-          {...register('text')}
+          {...register('description')}
           type="text"
           className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="e.g. lunch at mcdonalds, receipt from ace hardware"
+          placeholder="e.g. Lunch meeting, Office supplies"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          AI Description
+        </label>
+        <input
+          {...register('aiDescription')}
+          type="text"
+          disabled
+          className="w-full px-3 py-2 border rounded-md text-sm text-gray-500 bg-gray-50"
+          placeholder="AI generated description"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Text <span className="text-red-500">*</span>
+        </label>
+        <textarea
+          {...register('text')}
+          rows={3}
+          className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Receipt text or payment details"
         />
         {errors.text && <p className="text-red-500 text-xs mt-1">{errors.text.message}</p>}
       </div>

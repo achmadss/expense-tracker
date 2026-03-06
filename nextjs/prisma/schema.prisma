@@ -12,6 +12,8 @@ model Expense {
   messageId        String?
   userId           String
   userTag          String
+  description      String?
+  aiDescription    String?
   text             String
   imageUrls        String[]
   channelId        String?

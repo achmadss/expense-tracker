@@ -76,7 +76,13 @@ async function registerCommands() {
       .addStringOption((option) =>
         option
           .setName('description')
-          .setDescription('Expense description')
+          .setDescription('Short description of the expense')
+          .setRequired(false)
+      )
+      .addStringOption((option) =>
+        option
+          .setName('text')
+          .setDescription('Text from receipt or payment screenshot')
           .setRequired(false)
       )
       .addAttachmentOption((option) =>
@@ -108,11 +114,12 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   const description = interaction.options.getString('description');
+  const text = interaction.options.getString('text');
   const attachment = interaction.options.getAttachment('image');
 
-  if (!description && !attachment) {
+  if (!text && !attachment) {
     await interaction.reply({
-      content: 'Please provide at least a description or an image.',
+      content: 'Please provide at least text or an image.',
       ephemeral: true,
     });
     return;
@@ -130,7 +137,8 @@ client.on('interactionCreate', async (interaction) => {
   const messageId = interaction.id;
   const userId = interaction.user.id;
   const userTag = `${interaction.user.username}#${interaction.user.discriminator}`;
-  const text = description || '';
+  const descriptionField = description || '';
+  const textField = text || '';
   const imageUrls = attachment ? [attachment.url] : [];
   const channelId = interaction.channelId;
   const isDm = interaction.guildId === null;
@@ -141,7 +149,8 @@ client.on('interactionCreate', async (interaction) => {
     messageId,
     userId,
     userTag,
-    text,
+    description: descriptionField,
+    text: textField,
     imageUrls,
     channelId,
     isDm,

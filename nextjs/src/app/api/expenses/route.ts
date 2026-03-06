@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
         messageId: body.messageId,
         userId: body.userId,
         userTag: body.userTag,
+        description: body.description || null,
         text: body.text,
         imageUrls: body.imageUrls || [],
         channelId: body.channelId,
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
       expenseId: expense.id,
       messageId: expense.messageId,
       interactionToken: expense.interactionToken,
+      description: expense.description,
       text: expense.text,
       imageUrls: body.imageUrls || [],
     });
@@ -97,5 +99,49 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     console.error('Error deleting expenses:', error);
     return NextResponse.json({ error: 'Failed to delete expenses' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'No IDs provided' }, { status: 400 });
+    }
+
+    const expenses = await prisma.expense.findMany({
+      where: {
+        id: { in: ids },
+        status: { in: ['completed', 'failed'] },
+      },
+    });
+
+    if (expenses.length === 0) {
+      return NextResponse.json({ error: 'No eligible expenses found for reprocessing' }, { status: 400 });
+    }
+
+    await prisma.expense.updateMany({
+      where: { id: { in: expenses.map(e => e.id) } },
+      data: { status: 'processing' },
+    });
+
+    for (const expense of expenses) {
+      await publishToQueue(process.env.RABBITMQ_QUEUE || 'expense_processing', {
+        expenseId: expense.id,
+        messageId: expense.messageId,
+        interactionToken: expense.interactionToken,
+        description: expense.description,
+        text: expense.text,
+        imageUrls: expense.imageUrls,
+        isRedo: true,
+      });
+    }
+
+    return NextResponse.json({ success: true, count: expenses.length });
+  } catch (error) {
+    console.error('Error redoing expenses:', error);
+    return NextResponse.json({ error: 'Failed to redo expenses' }, { status: 500 });
   }
 }
