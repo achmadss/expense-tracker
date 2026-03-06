@@ -11,7 +11,9 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - RABBITMQ_QUEUE=expense_processing
       - RABBITMQ_REPLY_QUEUE=expense_results
-      - OCR_SERVICE_URL=http://ocr:8000
+      - OCR_REQUEST_QUEUE=ocr_request
+      - OCR_RESULT_QUEUE=ocr_result
+      - SYSTEM_PROMPT_PATH=/app/config/system-prompt.txt
       - LLM_SERVICE_URL=http://litellm:4000
       - LITELLM_API_KEY=${LITELLM_API_KEY}
       - OBJECT_STORAGE_URL=http://minio:9000
@@ -21,9 +23,14 @@ services:
     networks:
       - home
     depends_on:
-      - rabbitmq
-      - minio
-      - postgres
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./nextjs/config:/app/config:ro
     command: >
       sh -c "bunx prisma db push && bun run worker/consumer.tsx & bun --bun server.js"
 
@@ -75,8 +82,14 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - OCR_REQUEST_QUEUE=ocr_request
+      - OCR_RESULT_QUEUE=ocr_result
     networks:
       - home
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
