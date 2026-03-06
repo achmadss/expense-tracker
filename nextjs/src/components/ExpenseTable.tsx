@@ -16,6 +16,8 @@ interface Expense {
   messageId?: string | null;
   userId: string;
   userTag: string;
+  description?: string | null;
+  aiDescription?: string | null;
   text: string;
   imageUrls: string[];
   ocrText: string | null;
@@ -96,8 +98,17 @@ export default function ExpenseTable({
                   <div className="font-medium text-gray-800">{expense.userTag}</div>
                   <div className="text-xs text-gray-500">{expense.userId}</div>
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-800 max-w-xs truncate">
-                  {expense.text || <span className="text-gray-400 italic">no description</span>}
+                <td className="px-4 py-3 text-sm text-gray-800 max-w-xs">
+                  {expense.description || expense.aiDescription ? (
+                    <div>
+                      <div className="truncate">{expense.description || expense.aiDescription}</div>
+                      {(expense.description && expense.aiDescription) && (
+                        <div className="text-xs text-gray-500 truncate">{expense.aiDescription}</div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 italic">no description</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">
                   {extracted?.items ? (

@@ -2,14 +2,16 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { useCallback, useState, useTransition } from 'react';
-import { Trash2 } from 'lucide-react';
+import { useCallback, useState, useTransition, useEffect } from 'react';
+import { Trash2, RefreshCw } from 'lucide-react';
 import ExpenseTable from '@/components/ExpenseTable';
 
 interface Expense {
   id: string;
   userId: string;
   userTag: string;
+  description?: string | null;
+  aiDescription?: string | null;
   text: string;
   imageUrls: string[];
   ocrText: string | null;
@@ -31,12 +33,51 @@ interface ExpensesClientProps {
   pagination: PaginationInfo;
 }
 
-export default function ExpensesClient({ expenses, pagination }: ExpensesClientProps) {
+export default function ExpensesClient({ expenses: initialExpenses, pagination }: ExpensesClientProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
+
+  useEffect(() => {
+    const eventSource = new EventSource('/api/expenses/stream');
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const { expense: updatedExpense } = JSON.parse(event.data);
+        
+        setExpenses((prev) => {
+          const index = prev.findIndex((e) => e.id === updatedExpense.id);
+          if (index >= 0) {
+            const newExpenses = [...prev];
+            newExpenses[index] = {
+              ...updatedExpense,
+              timestamp: updatedExpense.timestamp,
+              createdAt: updatedExpense.createdAt,
+            };
+            return newExpenses;
+          }
+          return prev;
+        });
+      } catch (e) {
+        console.error('Error parsing SSE message:', e);
+      }
+    };
+    
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+    
+    return () => {
+      eventSource.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    setExpenses(initialExpenses);
+  }, [initialExpenses]);
 
   const updateParam = useCallback(
     (key: string, value: string) => {
@@ -89,6 +130,25 @@ export default function ExpensesClient({ expenses, pagination }: ExpensesClientP
       router.refresh();
     } else {
       alert('Failed to delete expenses.');
+    }
+  }, [selectedIds, router]);
+
+  const handleReprocessSelected = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Are you sure you want to reprocess ${selectedIds.size} expense(s)?`)) return;
+
+    const res = await fetch('/api/expenses', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: Array.from(selectedIds) }),
+    });
+
+    if (res.ok) {
+      setSelectedIds(new Set());
+      router.refresh();
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Failed to reprocess expenses.');
     }
   }, [selectedIds, router]);
 
@@ -156,13 +216,22 @@ export default function ExpensesClient({ expenses, pagination }: ExpensesClientP
               <option value="failed">Failed</option>
             </select>
             {someSelected && (
-              <button
-                onClick={handleDeleteSelected}
-                className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
-              >
-                <Trash2 className="w-4 h-4" />
-                Delete ({selectedIds.size})
-              </button>
+              <>
+                <button
+                  onClick={handleReprocessSelected}
+                  className="px-4 py-2 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reprocess ({selectedIds.size})
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete ({selectedIds.size})
+                </button>
+              </>
             )}
           </div>
 
