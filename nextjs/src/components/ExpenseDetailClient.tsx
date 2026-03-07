@@ -3,10 +3,11 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { ArrowLeft, Edit } from 'lucide-react';
+import { ArrowLeft, Edit, FileText } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import DeleteExpenseButton from '@/components/DeleteExpenseButton';
 import ReprocessButton from '@/components/ReprocessButton';
+import CancelButton from '@/components/CancelButton';
 
 interface ExtractedData {
   items?: Array<{ name: string; price: number; quantity: number }>;
@@ -69,7 +70,8 @@ export default function ExpenseDetailClient({ initialExpense }: ExpenseDetailCli
   }, [expense.id]);
 
   const extracted = parseExtracted(expense.extractedData);
-  const isFinal = expense.status === 'completed' || expense.status === 'failed';
+  const isFinal = expense.status === 'completed' || expense.status === 'failed' || expense.status === 'cancelled';
+  const isCancellable = expense.status === 'processing' || expense.status === 'pending';
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -179,15 +181,25 @@ export default function ExpenseDetailClient({ initialExpense }: ExpenseDetailCli
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Receipts</h2>
               <div className="grid grid-cols-2 gap-3">
-                {expense.imageUrls.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
-                    <img
-                      src={url}
-                      alt={`Receipt ${i + 1}`}
-                      className="w-full h-32 object-cover rounded border hover:opacity-80 transition-opacity"
-                    />
-                  </a>
-                ))}
+                {expense.imageUrls.map((url, i) => {
+                  const isPdf = url.toLowerCase().endsWith('.pdf');
+                  return (
+                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                      {isPdf ? (
+                        <div className="w-full h-32 border rounded flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors">
+                          <FileText className="w-8 h-8 text-red-600 mb-2" />
+                          <span className="text-xs text-gray-600">PDF</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={url}
+                          alt={`Receipt ${i + 1}`}
+                          className="w-full h-32 object-cover rounded border hover:opacity-80 transition-opacity"
+                        />
+                      )}
+                    </a>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -202,6 +214,9 @@ export default function ExpenseDetailClient({ initialExpense }: ExpenseDetailCli
             <Edit className="w-4 h-4" />
             Edit
           </Link>
+          {isCancellable && (
+            <CancelButton id={expense.id} onSuccess={() => window.location.reload()} />
+          )}
           {isFinal && (
             <ReprocessButton id={expense.id} onSuccess={() => window.location.reload()} />
           )}

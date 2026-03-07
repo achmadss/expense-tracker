@@ -32,4 +32,5 @@ enum ExpenseStatus {
   processing
   completed
   failed
+  cancelled
 }

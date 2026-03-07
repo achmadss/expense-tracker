@@ -17,8 +17,8 @@ export async function POST(
       return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
     }
 
-    if (expense.status !== 'completed' && expense.status !== 'failed') {
-      return NextResponse.json({ error: 'Can only redo completed or failed expenses' }, { status: 400 });
+    if (expense.status !== 'completed' && expense.status !== 'failed' && expense.status !== 'cancelled') {
+      return NextResponse.json({ error: 'Can only redo completed, failed, or cancelled expenses' }, { status: 400 });
     }
 
     await prisma.expense.update({

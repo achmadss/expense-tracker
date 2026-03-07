@@ -4,7 +4,8 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Upload, FileText } from 'lucide-react';
 
 const expenseItemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
@@ -15,7 +16,7 @@ const expenseItemSchema = z.object({
 const expenseSchema = z.object({
   description: z.string().optional(),
   aiDescription: z.string().optional(),
-  text: z.string().min(1, 'Text is required'),
+  text: z.string(),
   userId: z.string().optional(),
   userTag: z.string().optional(),
   messageId: z.string().optional(),
@@ -41,7 +42,14 @@ interface ExtractedData {
 }
 
 interface ExpenseFormProps {
-  initialData?: Partial<ExpenseFormData> & { id?: string; extractedData?: ExtractedData | null; description?: string; aiDescription?: string };
+  initialData?: Partial<ExpenseFormData> & { 
+    id?: string; 
+    extractedData?: ExtractedData | null; 
+    description?: string; 
+    aiDescription?: string; 
+    ocrText?: string;
+    imageUrls?: string[];
+  };
   mode?: 'create' | 'edit';
 }
 
@@ -49,15 +57,27 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingImages, setExistingImages] = useState<string[]>(initialData?.imageUrls || []);
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const extracted = initialData?.extractedData;
   const initialItems = extracted?.items || [];
   const initialTax = extracted?.tax ?? 0;
+  const hasExistingImages = existingImages.length > 0;
+  const hasNewFiles = newFiles.length > 0;
+  const hasAnyImage = hasExistingImages || hasNewFiles;
+
+  const validateForm = (text: string, hasImage: boolean) => {
+    return text.trim().length > 0 || hasImage;
+  };
 
   const {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors },
   } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
@@ -76,6 +96,36 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
     },
   });
 
+  const watchedText = watch('text');
+
+  useEffect(() => {
+    if (fileInputRef.current) {
+      fileInputRef.current.setCustomValidity(
+        validateForm(watchedText, hasAnyImage) ? '' : 'At least text or image is required'
+      );
+    }
+  }, [watchedText, hasAnyImage]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setNewFiles((prev) => [...prev, ...files]);
+    
+    const urls = files.map((file) => URL.createObjectURL(file));
+    setPreviewUrls((prev) => [...prev, ...urls]);
+  };
+
+  const removeNewFile = (index: number) => {
+    setNewFiles((prev) => prev.filter((_, i) => i !== index));
+    setPreviewUrls((prev) => {
+      URL.revokeObjectURL(prev[index]);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const removeExistingImage = (index: number) => {
+    setExistingImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const { fields, append, remove } = useFieldArray({
     control,
     name: 'items',
@@ -85,51 +135,95 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
     setIsSubmitting(true);
     setError(null);
 
+    const hasText = data.text && data.text.trim().length > 0;
+    if (!hasText && !hasAnyImage) {
+      setError('At least text or file is required');
+      setIsSubmitting(false);
+      return;
+    }
+
     const items = data.items ?? [];
     const itemsTotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const total = itemsTotal + (data.tax || 0);
 
-    const payload = {
-      description: data.description || null,
-      aiDescription: data.aiDescription || null,
-      text: data.text,
-      userId: data.userId || 'manual',
-      userTag: data.userTag || 'manual',
-      messageId: data.messageId || null,
-      channelId: data.channelId || null,
-      isDm: data.isDm || false,
-      imageUrls: [],
-      timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
-      extractedData: {
-        items: data.items,
-        tax: data.tax || 0,
-        total,
-      },
-    };
-
     try {
-      let response: Response;
-
       if (mode === 'create') {
-        response = await fetch('/api/expenses', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        if (hasNewFiles) {
+          const formData = new FormData();
+          formData.append('description', data.description || '');
+          formData.append('text', data.text || '');
+          formData.append('userId', data.userId || 'manual');
+          formData.append('userTag', data.userTag || 'manual');
+          
+          for (const file of newFiles) {
+            formData.append('files', file);
+          }
+
+          const response = await fetch('/api/expenses/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to create expense');
+          }
+
+          const expense = await response.json();
+          router.push(`/expenses/${expense.id}`);
+        } else {
+          const payload = {
+            description: data.description || null,
+            text: data.text,
+            userId: data.userId || 'manual',
+            userTag: data.userTag || 'manual',
+            timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
+            extractedData: {
+              items: data.items,
+              tax: data.tax || 0,
+              total,
+            },
+          };
+
+          const response = await fetch('/api/expenses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) throw new Error('Request failed');
+          const expense = await response.json();
+          router.push(`/expenses/${expense.id}`);
+        }
       } else {
-        response = await fetch(`/api/expenses/${initialData?.id}`, {
+        const payload = {
+          description: data.description || null,
+          text: data.text,
+          imageUrls: existingImages,
+          userId: data.userId || 'manual',
+          userTag: data.userTag || 'manual',
+          messageId: data.messageId || null,
+          channelId: data.channelId || null,
+          isDm: data.isDm || false,
+          timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
+          extractedData: {
+            items: data.items,
+            tax: data.tax || 0,
+            total,
+          },
+        };
+
+        const response = await fetch(`/api/expenses/${initialData?.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+
+        if (!response.ok) throw new Error('Request failed');
+        router.push(`/expenses/${initialData?.id}`);
       }
-
-      if (!response.ok) throw new Error('Request failed');
-
-      const expense = await response.json();
-      router.push(mode === 'create' ? `/expenses/${expense.id}` : '/');
-    } catch {
-      setError(mode === 'create' ? 'Failed to create expense.' : 'Failed to update expense.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : (mode === 'create' ? 'Failed to create expense.' : 'Failed to update expense.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -168,9 +262,101 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
         />
       </div>
 
+      {/* Images Section */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Text <span className="text-red-500">*</span>
+          Images {!hasExistingImages && mode === 'edit' && <span className="text-gray-400">(optional)</span>}
+        </label>
+        
+        {/* Existing Images (Edit mode only) */}
+        {mode === 'edit' && existingImages.length > 0 && (
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {existingImages.map((url, index) => {
+              const isPdf = url.toLowerCase().endsWith('.pdf');
+              return (
+                <div key={index} className="relative group">
+                  {isPdf ? (
+                    <div className="w-full h-20 object-cover rounded border bg-gray-100 flex flex-col items-center justify-center">
+                      <FileText className="w-5 h-5 text-red-600 mb-1" />
+                      <span className="text-xs text-gray-600">PDF</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={url}
+                      alt={`Receipt ${index + 1}`}
+                      className="w-full h-20 object-cover rounded border"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeExistingImage(index)}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* New File Previews */}
+        {previewUrls.length > 0 && (
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {previewUrls.map((url, index) => {
+              const file = newFiles[index];
+              const isPdf = file?.type === 'application/pdf';
+              
+              return (
+                <div key={index} className="relative group">
+                  {isPdf ? (
+                    <div className="w-full h-20 object-cover rounded border bg-gray-100 flex items-center justify-center">
+                      <span className="text-xs text-gray-600">PDF</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={url}
+                      alt={`New ${index + 1}`}
+                      className="w-full h-20 object-cover rounded border"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeNewFile(index)}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Upload Button */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          multiple
+          onChange={handleFileChange}
+          className="hidden"
+          id="image-upload"
+        />
+        <button
+          type="button"
+          onClick={() => document.getElementById('image-upload')?.click()}
+          className="inline-flex items-center gap-2 px-4 py-2 border border-dashed border-gray-300 rounded-md text-sm text-gray-600 hover:border-gray-400 hover:bg-gray-50"
+        >
+          <Upload className="w-4 h-4" />
+          Upload Files
+        </button>
+        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP, PDF. Max 50MB each.</p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Text {!hasAnyImage && <span className="text-red-500">*</span>}
         </label>
         <textarea
           {...register('text')}

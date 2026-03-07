@@ -10,6 +10,7 @@ import httpx
 import aio_pika
 from paddleocr import PaddleOCR
 from PIL import Image
+from pdf2image import convert_from_bytes
 from fastapi import FastAPI, File, UploadFile, HTTPException, status
 from fastapi.responses import JSONResponse
 
@@ -29,10 +30,11 @@ SUPPORTED_CONTENT_TYPES = {
     "image/jpg",
     "image/bmp",
     "image/webp",
+    "application/pdf",
     "application/octet-stream",
 }
 
-SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".pdf"}
 
 SUPPORTED_PIL_FORMATS = {"PNG", "JPEG", "BMP", "WEBP"}
 
@@ -126,45 +128,29 @@ async def tesseract_ocr_from_url(payload: dict):
     if not validate_url_extension(url):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"URL must point to a supported image format: {', '.join(SUPPORTED_EXTENSIONS)}",
+            detail=f"URL must point to a supported file format: {', '.join(SUPPORTED_EXTENSIONS)}",
         )
 
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
-            response = await client.get(url)
+        is_pdf = url.lower().endswith(".pdf")
 
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="URL does not return a valid response",
-                )
+        if is_pdf:
+            content = await process_pdf_from_url(url)
+            return JSONResponse(content={"content": content})
 
-            content_type = response.headers.get("content-type", "")
-            content = response.content
+        ocr = PaddleOCR(use_angle_cls=True, lang="en", use_gpu=False, show_log=False)
+        result = ocr.ocr(url, cls=True)
 
-            validate_image_size(content)
-            validate_content_type(content_type)
+        text_lines = []
+        if result and result[0]:
+            for line in result[0]:
+                if line and len(line) >= 2:
+                    text_lines.append(line[1][0])
 
-            image = Image.open(io.BytesIO(content))
-
-            if image.format not in SUPPORTED_PIL_FORMATS:
-                raise HTTPException(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    detail="Unsupported image format from URL",
-                )
-
-            text = perform_easyocr(image)
-
-            return JSONResponse(content={"content": text})
+        return JSONResponse(content={"content": "\n".join(text_lines).strip()})
 
     except HTTPException:
         raise
-    except httpx.RequestError as e:
-        logger.error(f"Failed to fetch URL: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to fetch image from URL",
-        )
     except Exception as e:
         logger.error(f"OCR processing error: {str(e)}")
         raise HTTPException(
@@ -176,32 +162,54 @@ async def tesseract_ocr_from_url(payload: dict):
 async def process_ocr_from_url(url: str) -> str:
     if not validate_url_extension(url):
         raise ValueError(
-            f"URL must point to a supported image format: {', '.join(SUPPORTED_EXTENSIONS)}"
+            f"URL must point to a supported file format: {', '.join(SUPPORTED_EXTENSIONS)}"
         )
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
+    is_pdf = url.lower().endswith(".pdf")
+
+    if is_pdf:
+        return await process_pdf_from_url(url)
+
+    ocr = PaddleOCR(use_angle_cls=True, lang="en", use_gpu=False, show_log=False)
+    result = ocr.ocr(url, cls=True)
+
+    text_lines = []
+    if result and result[0]:
+        for line in result[0]:
+            if line and len(line) >= 2:
+                text_lines.append(line[1][0])
+    return "\n".join(text_lines).strip()
+
+
+async def process_pdf_from_url(url: str) -> str:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
         response = await client.get(url)
-
         if response.status_code != 200:
-            raise ValueError("URL does not return a valid response")
+            raise ValueError("Failed to download PDF")
 
-        content_type = response.headers.get("content-type", "")
-        content = response.content
+        validate_image_size(response.content)
+        images = convert_from_bytes(response.content)
 
-        validate_image_size(content)
-        validate_content_type(content_type)
+        ocr = PaddleOCR(use_angle_cls=True, lang="en", use_gpu=False, show_log=False)
+        all_text_lines = []
 
-        image = Image.open(io.BytesIO(content))
+        for image in images:
+            img_bytes = io.BytesIO()
+            image.save(img_bytes, format="PNG")
+            img_bytes.seek(0)
 
-        if image.format not in SUPPORTED_PIL_FORMATS:
-            raise ValueError("Unsupported image format from URL")
+            result = ocr.ocr(img_bytes.getvalue(), cls=True)
+            if result and result[0]:
+                for line in result[0]:
+                    if line and len(line) >= 2:
+                        all_text_lines.append(line[1][0])
 
-        text = perform_easyocr(image)
-        return text
+        return "\n".join(all_text_lines).strip()
 
 
 async def on_message(message: aio_pika.IncomingMessage):
     async with message.process():
+        data = {}
         try:
             data = json.loads(message.body.decode())
             request_id = data.get("requestId", "unknown")

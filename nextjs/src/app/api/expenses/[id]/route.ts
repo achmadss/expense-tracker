@@ -28,12 +28,23 @@ export async function PUT(
   try {
     const body = await request.json();
     
+    const existingExpense = await prisma.expense.findUnique({
+      where: { id },
+    });
+
+    if (!existingExpense) {
+      return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
+    }
+
+    const textChanged = existingExpense.text !== body.text;
+    const imagesChanged = JSON.stringify(existingExpense.imageUrls) !== JSON.stringify(body.imageUrls || []);
+    const shouldReprocess = textChanged || imagesChanged;
+
     const updateData: Record<string, unknown> = {
       messageId: body.messageId,
       userId: body.userId,
       userTag: body.userTag,
       description: body.description || null,
-      aiDescription: body.aiDescription || null,
       text: body.text,
       imageUrls: body.imageUrls || [],
       channelId: body.channelId,
@@ -51,6 +62,23 @@ export async function PUT(
       where: { id },
       data: updateData,
     });
+
+    if (shouldReprocess) {
+      await prisma.expense.update({
+        where: { id },
+        data: { status: 'processing' },
+      });
+
+      await publishToQueue(process.env.RABBITMQ_QUEUE || 'expense_processing', {
+        expenseId: expense.id,
+        messageId: expense.messageId || expense.id,
+        interactionToken: expense.interactionToken,
+        description: expense.description,
+        text: expense.text,
+        imageUrls: expense.imageUrls,
+        isRedo: true,
+      });
+    }
 
     return NextResponse.json(expense);
   } catch (error) {

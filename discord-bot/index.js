@@ -72,7 +72,7 @@ async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
       .setName('expense')
-      .setDescription('Submit an expense')
+      .setDescription('Submit an expense with description, text, and/or receipt (image or PDF)')
       .addStringOption((option) =>
         option
           .setName('description')
@@ -88,7 +88,7 @@ async function registerCommands() {
       .addAttachmentOption((option) =>
         option
           .setName('image')
-          .setDescription('Receipt image (jpg, png, webp)')
+          .setDescription('Receipt image (jpg, png, webp, pdf)')
           .setRequired(false)
       ),
   ];
@@ -125,10 +125,10 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  const validImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const validImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
   if (attachment && !validImageTypes.includes(attachment.contentType)) {
     await interaction.reply({
-      content: 'Invalid image format. Please use jpg, png, or webp.',
+      content: 'Invalid format. Please use jpg, png, webp, or pdf.',
       ephemeral: true,
     });
     return;

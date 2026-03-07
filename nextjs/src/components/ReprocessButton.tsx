@@ -14,7 +14,7 @@ export default function ReprocessButton({ id, disabled = false, onSuccess }: Pro
 
   const handleReprocess = async () => {
     const confirmed = window.confirm(
-      'Are you sure you want to reprocess this expense? This will run OCR and LLM extraction again using existing images.'
+      'Are you sure you want to reprocess this expense? This will run OCR and LLM extraction again using existing images. If it was cancelled, any previous extracted data will be preserved.'
     );
     if (!confirmed) return;
 
