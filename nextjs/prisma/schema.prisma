@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Expense {
-  id               String        @id @default(uuid())
+  id               String           @id @default(uuid())
   messageId        String?
   userId           String
   userTag          String
@@ -17,14 +17,26 @@ model Expense {
   text             String
   imageUrls        String[]
   channelId        String?
-  isDm             Boolean       @default(false)
+  isDm             Boolean          @default(false)
   ocrText          String?
   extractedData    String?
   interactionToken String?
-  status           ExpenseStatus @default(pending)
+  status           ExpenseStatus    @default(pending)
   timestamp        DateTime
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  history          ExpenseHistory[]
+}
+
+model ExpenseHistory {
+  id          String   @id @default(uuid())
+  expenseId   String
+  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  triggeredBy String
+  snapshot    String
+  createdAt   DateTime @default(now())
+
+  @@index([expenseId])
 }
 
 enum ExpenseStatus {

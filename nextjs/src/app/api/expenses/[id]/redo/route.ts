@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { publishToQueue } from '@/lib/rabbitmq';
+import { captureSnapshot } from '@/lib/expenseHistory';
 
 export async function POST(
   request: NextRequest,
@@ -20,6 +21,8 @@ export async function POST(
     if (expense.status !== 'completed' && expense.status !== 'failed' && expense.status !== 'cancelled') {
       return NextResponse.json({ error: 'Can only redo completed, failed, or cancelled expenses' }, { status: 400 });
     }
+
+    await captureSnapshot(id, 'reprocess');
 
     await prisma.expense.update({
       where: { id },

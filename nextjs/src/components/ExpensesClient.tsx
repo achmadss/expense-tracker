@@ -5,6 +5,9 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useCallback, useState, useTransition, useEffect } from 'react';
 import { Trash2, RefreshCw } from 'lucide-react';
 import ExpenseTable from '@/components/ExpenseTable';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import EditExpenseDialog from '@/components/EditExpenseDialog';
+import Breadcrumbs from '@/components/Breadcrumbs';
 
 interface Expense {
   id: string;
@@ -33,6 +36,12 @@ interface ExpensesClientProps {
   pagination: PaginationInfo;
 }
 
+interface ConfirmState {
+  open: boolean;
+  type: 'delete' | 'reprocess' | 'delete-many' | 'reprocess-many';
+  ids: string[];
+}
+
 export default function ExpensesClient({ expenses: initialExpenses, pagination }: ExpensesClientProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -40,14 +49,19 @@ export default function ExpensesClient({ expenses: initialExpenses, pagination }
   const [isPending, startTransition] = useTransition();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
+  const [editExpense, setEditExpense] = useState<Expense | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmState>({
+    open: false,
+    type: 'delete',
+    ids: [],
+  });
 
   useEffect(() => {
     const eventSource = new EventSource('/api/expenses/stream');
-    
+
     eventSource.onmessage = (event) => {
       try {
         const { expense: updatedExpense } = JSON.parse(event.data);
-        
         setExpenses((prev) => {
           const index = prev.findIndex((e) => e.id === updatedExpense.id);
           if (index >= 0) {
@@ -65,11 +79,11 @@ export default function ExpensesClient({ expenses: initialExpenses, pagination }
         console.error('Error parsing SSE message:', e);
       }
     };
-    
+
     eventSource.onerror = () => {
       eventSource.close();
     };
-    
+
     return () => {
       eventSource.close();
     };
@@ -106,61 +120,67 @@ export default function ExpensesClient({ expenses: initialExpenses, pagination }
   const handleSelectOne = useCallback((id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (checked) {
-        next.add(id);
-      } else {
-        next.delete(id);
-      }
+      if (checked) next.add(id);
+      else next.delete(id);
       return next;
     });
   }, []);
 
-  const handleDeleteSelected = useCallback(async () => {
-    if (selectedIds.size === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} expense(s)?`)) return;
+  const handleEdit = useCallback((expense: Expense) => {
+    setEditExpense(expense);
+  }, []);
 
-    const res = await fetch('/api/expenses', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: Array.from(selectedIds) }),
-    });
-
-    if (res.ok) {
-      setSelectedIds(new Set());
-      router.refresh();
-    } else {
-      alert('Failed to delete expenses.');
-    }
-  }, [selectedIds, router]);
-
-  const handleReprocessSelected = useCallback(async () => {
-    if (selectedIds.size === 0) return;
-    if (!confirm(`Are you sure you want to reprocess ${selectedIds.size} expense(s)?`)) return;
-
-    const res = await fetch('/api/expenses', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: Array.from(selectedIds) }),
-    });
-
-    if (res.ok) {
-      setSelectedIds(new Set());
-      router.refresh();
-    } else {
-      const data = await res.json();
-      alert(data.error || 'Failed to reprocess expenses.');
-    }
-  }, [selectedIds, router]);
-
-  const handleDelete = useCallback(async (id: string) => {
-    if (!confirm('Are you sure you want to delete this expense?')) return;
-    const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      router.refresh();
-    } else {
-      alert('Failed to delete expense.');
-    }
+  const handleEditSuccess = useCallback(() => {
+    setEditExpense(null);
+    router.refresh();
   }, [router]);
+
+  const handleDelete = useCallback((id: string) => {
+    setConfirmDialog({ open: true, type: 'delete', ids: [id] });
+  }, []);
+
+  const handleReprocess = useCallback((id: string) => {
+    setConfirmDialog({ open: true, type: 'reprocess', ids: [id] });
+  }, []);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    setConfirmDialog({ open: true, type: 'delete-many', ids: Array.from(selectedIds) });
+  }, [selectedIds]);
+
+  const handleReprocessSelected = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    setConfirmDialog({ open: true, type: 'reprocess-many', ids: Array.from(selectedIds) });
+  }, [selectedIds]);
+
+  const executeConfirm = useCallback(async () => {
+    const { type, ids } = confirmDialog;
+    setConfirmDialog((prev) => ({ ...prev, open: false }));
+
+    if (type === 'delete' || type === 'delete-many') {
+      const res = ids.length === 1
+        ? await fetch(`/api/expenses/${ids[0]}`, { method: 'DELETE' })
+        : await fetch('/api/expenses', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+          });
+      if (res.ok) {
+        if (type === 'delete-many') setSelectedIds(new Set());
+        router.refresh();
+      }
+    } else {
+      const res = await fetch('/api/expenses', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        if (type === 'reprocess-many') setSelectedIds(new Set());
+        router.refresh();
+      }
+    }
+  }, [confirmDialog, router]);
 
   const handlePageChange = useCallback(
     (newPage: number) => {
@@ -186,126 +206,150 @@ export default function ExpensesClient({ expenses: initialExpenses, pagination }
   );
 
   const currentStatus = searchParams.get('status') || '';
-  const allSelected = expenses.length > 0 && expenses.every((e) => selectedIds.has(e.id));
   const someSelected = selectedIds.size > 0;
 
+  const confirmConfig = {
+    delete: { title: 'Delete Expense', message: 'Delete this expense? This cannot be undone.', label: 'Delete', cls: 'bg-[#c72e2e] hover:bg-[#a82525]' },
+    reprocess: { title: 'Reprocess Expense', message: 'Reprocess this expense?', label: 'Reprocess', cls: 'bg-[#cc7a00] hover:bg-[#a86400]' },
+    'delete-many': { title: 'Delete Expenses', message: `Delete ${confirmDialog.ids.length} expense(s)? This cannot be undone.`, label: 'Delete All', cls: 'bg-[#c72e2e] hover:bg-[#a82525]' },
+    'reprocess-many': { title: 'Reprocess Expenses', message: `Reprocess ${confirmDialog.ids.length} expense(s)?`, label: 'Reprocess All', cls: 'bg-[#cc7a00] hover:bg-[#a86400]' },
+  }[confirmDialog.type];
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
-          <Link
-            href="/expenses/new"
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            + New Expense
-          </Link>
-        </div>
+    <div>
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.label}
+        confirmClass={confirmConfig.cls}
+        onConfirm={executeConfirm}
+        onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+      />
 
-        <div className={`bg-white rounded-lg shadow mb-6 ${isPending ? 'opacity-60' : ''}`}>
-          <div className="p-4 border-b flex gap-4 flex-wrap items-center">
-            <select
-              value={currentStatus}
-              onChange={(e) => updateParam('status', e.target.value)}
-              className="px-4 py-2 border rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-            </select>
-            {someSelected && (
-              <>
-                <button
-                  onClick={handleReprocessSelected}
-                  className="px-4 py-2 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Reprocess ({selectedIds.size})
-                </button>
-                <button
-                  onClick={handleDeleteSelected}
-                  className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete ({selectedIds.size})
-                </button>
-              </>
-            )}
-          </div>
+      <EditExpenseDialog
+        expense={editExpense}
+        onClose={() => setEditExpense(null)}
+        onSuccess={handleEditSuccess}
+      />
 
-          <ExpenseTable
-            expenses={expenses}
-            selectedIds={selectedIds}
-            onSelectAll={handleSelectAll}
-            onSelectOne={handleSelectOne}
-            onDelete={handleDelete}
-          />
+      <Breadcrumbs crumbs={[{ label: 'Home', href: '/' }, { label: 'Expenses' }]} />
 
-          <div className="p-4 border-t flex justify-between items-center flex-wrap gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-700">Show:</span>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(e.target.value)}
-                className="px-2 py-1 border rounded text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="5">5</option>
-                <option value="10">10</option>
-                <option value="20">20</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-              <span className="text-sm text-gray-700">per page</span>
-            </div>
-
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handlePageChange(pagination.page - 1)}
-                  disabled={pagination.page <= 1}
-                  className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Prev
-                </button>
-                {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((p) => {
-                  const showPage = p === 1 || p === pagination.totalPages || Math.abs(p - pagination.page) <= 1;
-                  if (!showPage && p !== pagination.page - 2 && p !== pagination.page + 2) {
-                    return p === pagination.page - 3 || p === pagination.page + 3 ? (
-                      <span key={p} className="px-2 text-gray-500">...</span>
-                    ) : null;
-                  }
-                  return (
-                    <button
-                      key={p}
-                      onClick={() => handlePageChange(p)}
-                      className={`px-3 py-1 rounded ${
-                        p === pagination.page
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  );
-                })}
-                <button
-                  onClick={() => handlePageChange(pagination.page + 1)}
-                  disabled={pagination.page >= pagination.totalPages}
-                  className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <p className="text-sm text-gray-700 text-center">
-          Showing {expenses.length} of {pagination.total} expenses
-        </p>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-semibold text-[#d4d4d4]">Expenses</h1>
+        <Link
+          href="/expenses/new"
+          className="px-4 py-2 bg-[#0e639c] text-white text-sm rounded hover:bg-[#1177bb] transition-colors"
+        >
+          + New Expense
+        </Link>
       </div>
+
+      <div className={`bg-[#252526] border border-[#3e3e42] rounded-lg mb-4 ${isPending ? 'opacity-60' : ''}`}>
+        <div className="p-3 border-b border-[#3e3e42] flex gap-3 flex-wrap items-center">
+          <select
+            value={currentStatus}
+            onChange={(e) => updateParam('status', e.target.value)}
+            className="px-3 py-1.5 bg-[#3c3c3c] border border-[#3e3e42] rounded text-sm text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#4fc1ff]"
+          >
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+          {someSelected && (
+            <>
+              <button
+                onClick={handleReprocessSelected}
+                className="px-3 py-1.5 bg-[#cc7a00] text-white text-sm rounded hover:bg-[#a86400] transition-colors flex items-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Reprocess ({selectedIds.size})
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                className="px-3 py-1.5 bg-[#c72e2e] text-white text-sm rounded hover:bg-[#a82525] transition-colors flex items-center gap-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete ({selectedIds.size})
+              </button>
+            </>
+          )}
+        </div>
+
+        <ExpenseTable
+          expenses={expenses}
+          selectedIds={selectedIds}
+          onSelectAll={handleSelectAll}
+          onSelectOne={handleSelectOne}
+          onEdit={handleEdit}
+          onReprocess={handleReprocess}
+          onDelete={handleDelete}
+        />
+
+        <div className="p-3 border-t border-[#3e3e42] flex justify-between items-center flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-[#858585]">Show:</span>
+            <select
+              value={pagination.limit}
+              onChange={(e) => handleLimitChange(e.target.value)}
+              className="px-2 py-1 bg-[#3c3c3c] border border-[#3e3e42] rounded text-sm text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#4fc1ff]"
+            >
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span className="text-sm text-[#858585]">per page</span>
+          </div>
+
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={pagination.page <= 1}
+                className="px-3 py-1 rounded bg-[#3c3c3c] hover:bg-[#4a4a4a] text-[#d4d4d4] text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Prev
+              </button>
+              {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((p) => {
+                const showPage = p === 1 || p === pagination.totalPages || Math.abs(p - pagination.page) <= 1;
+                if (!showPage && p !== pagination.page - 2 && p !== pagination.page + 2) {
+                  return p === pagination.page - 3 || p === pagination.page + 3 ? (
+                    <span key={p} className="px-2 text-[#858585]">...</span>
+                  ) : null;
+                }
+                return (
+                  <button
+                    key={p}
+                    onClick={() => handlePageChange(p)}
+                    className={`px-3 py-1 rounded text-sm transition-colors ${
+                      p === pagination.page
+                        ? 'bg-[#094771] text-white'
+                        : 'bg-[#3c3c3c] hover:bg-[#4a4a4a] text-[#d4d4d4]'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={pagination.page >= pagination.totalPages}
+                className="px-3 py-1 rounded bg-[#3c3c3c] hover:bg-[#4a4a4a] text-[#d4d4d4] text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-sm text-[#858585] text-center">
+        Showing {expenses.length} of {pagination.total} expenses
+      </p>
     </div>
   );
 }

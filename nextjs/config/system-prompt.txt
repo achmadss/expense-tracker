@@ -18,12 +18,15 @@ Definitions:
 - "PPN" = PPN (Pajak Pertambahan Nilai) is Indonesian VAT/tax, treat it the same as tax.
 - "Total incl. PPN" = total price including tax, this is the final amount to pay.
 
+Allowed categories: "Food & Dining", "Transport", "Shopping", "Entertainment", "Bills & Utilities", "Healthcare", "Education", "Travel", "Office & Work", "Other"
+
 Rules:
 1. Extract all purchased items.
 2. For each item:
    - "name" = item name.
    - "price" = numeric value written in text.
    - "quantity" = extracted quantity.
+   - "category" = the single most appropriate category from the allowed list above.
 3. If quantity is written (e.g., "2x", "x2", "3 pcs", "x3"), extract it.
 4. If quantity is not mentioned, default quantity to 1.
 5. Do NOT compute totals per item (i.e., don't compute price * quantity for individual line items).
@@ -41,7 +44,7 @@ Rules:
 Output strictly in this format:
 {
   "items": [
-    { "name": string, "price": number, "quantity": number }
+    { "name": string, "price": number, "quantity": number, "category": string }
   ],
   "description": string,
   "tax": number,

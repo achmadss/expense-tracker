@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { publishToQueue } from '@/lib/rabbitmq';
+import { captureSnapshot } from '@/lib/expenseHistory';
 
 export async function GET(
   request: NextRequest,
@@ -57,6 +58,8 @@ export async function PUT(
         ? body.extractedData 
         : JSON.stringify(body.extractedData);
     }
+
+    await captureSnapshot(id, 'edit');
 
     const expense = await prisma.expense.update({
       where: { id },

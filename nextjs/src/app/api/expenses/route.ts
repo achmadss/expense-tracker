@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { publishToQueue } from '@/lib/rabbitmq';
+import { captureSnapshot } from '@/lib/expenseHistory';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -120,6 +121,10 @@ export async function PATCH(request: NextRequest) {
 
     if (expenses.length === 0) {
       return NextResponse.json({ error: 'No eligible expenses found for reprocessing' }, { status: 400 });
+    }
+
+    for (const expense of expenses) {
+      await captureSnapshot(expense.id, 'reprocess');
     }
 
     await prisma.expense.updateMany({

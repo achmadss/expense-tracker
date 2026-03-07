@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { ExpenseStatus } from '@prisma/client';
 
 export async function POST(
   request: NextRequest,
@@ -22,7 +23,7 @@ export async function POST(
 
     await prisma.expense.update({
       where: { id },
-      data: { status: 'cancelled' },
+      data: { status: ExpenseStatus.cancelled },
     });
 
     return NextResponse.json({ success: true, message: 'Expense cancelled' });

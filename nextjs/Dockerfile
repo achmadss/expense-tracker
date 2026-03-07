@@ -46,7 +46,10 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/worker ./worker
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
+COPY entrypoint.sh ./entrypoint.sh
+
+RUN chmod +x ./entrypoint.sh
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "bunx prisma db push && bun run worker/consumer.tsx & bun --bun server.js"]
+ENTRYPOINT ["./entrypoint.sh"]

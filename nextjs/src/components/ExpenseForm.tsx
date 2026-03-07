@@ -42,18 +42,20 @@ interface ExtractedData {
 }
 
 interface ExpenseFormProps {
-  initialData?: Partial<ExpenseFormData> & { 
-    id?: string; 
-    extractedData?: ExtractedData | null; 
-    description?: string; 
-    aiDescription?: string; 
+  initialData?: Partial<ExpenseFormData> & {
+    id?: string;
+    extractedData?: ExtractedData | null;
+    description?: string;
+    aiDescription?: string;
     ocrText?: string;
     imageUrls?: string[];
   };
   mode?: 'create' | 'edit';
+  onSuccess?: () => void;
+  onClose?: () => void;
 }
 
-export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormProps) {
+export default function ExpenseForm({ initialData, mode = 'edit', onSuccess, onClose }: ExpenseFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +172,8 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
           }
 
           const expense = await response.json();
-          router.push(`/expenses/${expense.id}`);
+          if (onSuccess) onSuccess();
+          else router.push(`/expenses/${expense.id}`);
         } else {
           const payload = {
             description: data.description || null,
@@ -193,7 +196,8 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
 
           if (!response.ok) throw new Error('Request failed');
           const expense = await response.json();
-          router.push(`/expenses/${expense.id}`);
+          if (onSuccess) onSuccess();
+          else router.push(`/expenses/${expense.id}`);
         }
       } else {
         const payload = {
@@ -220,7 +224,8 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
         });
 
         if (!response.ok) throw new Error('Request failed');
-        router.push(`/expenses/${initialData?.id}`);
+        if (onSuccess) onSuccess();
+        else router.push(`/expenses/${initialData?.id}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : (mode === 'create' ? 'Failed to create expense.' : 'Failed to update expense.'));
@@ -229,45 +234,44 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
     }
   };
 
+  const inputClass = 'w-full px-3 py-2 bg-[#3c3c3c] border border-[#3e3e42] rounded-md text-sm text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#4fc1ff] placeholder-[#858585]';
+  const labelClass = 'block text-sm font-medium text-[#d4d4d4] mb-1';
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+        <div className="bg-[#3c3c3c] border border-[#c72e2e] text-red-400 px-4 py-3 rounded text-sm">
           {error}
         </div>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Short Description
-        </label>
+        <label className={labelClass}>Short Description</label>
         <input
           {...register('description')}
           type="text"
-          className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={inputClass}
           placeholder="e.g. Lunch meeting, Office supplies"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          AI Description
-        </label>
+        <label className={labelClass}>AI Description</label>
         <input
           {...register('aiDescription')}
           type="text"
           disabled
-          className="w-full px-3 py-2 border rounded-md text-sm text-gray-500 bg-gray-50"
+          className="w-full px-3 py-2 bg-[#2a2d2e] border border-[#3e3e42] rounded-md text-sm text-[#858585] cursor-not-allowed"
           placeholder="AI generated description"
         />
       </div>
 
       {/* Images Section */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Images {!hasExistingImages && mode === 'edit' && <span className="text-gray-400">(optional)</span>}
+        <label className={labelClass}>
+          Images {!hasExistingImages && mode === 'edit' && <span className="text-[#858585]">(optional)</span>}
         </label>
-        
+
         {/* Existing Images (Edit mode only) */}
         {mode === 'edit' && existingImages.length > 0 && (
           <div className="grid grid-cols-4 gap-2 mb-3">
@@ -276,21 +280,17 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
               return (
                 <div key={index} className="relative group">
                   {isPdf ? (
-                    <div className="w-full h-20 object-cover rounded border bg-gray-100 flex flex-col items-center justify-center">
-                      <FileText className="w-5 h-5 text-red-600 mb-1" />
-                      <span className="text-xs text-gray-600">PDF</span>
+                    <div className="w-full h-20 object-cover rounded border border-[#3e3e42] bg-[#3c3c3c] flex flex-col items-center justify-center">
+                      <FileText className="w-5 h-5 text-red-400 mb-1" />
+                      <span className="text-xs text-[#858585]">PDF</span>
                     </div>
                   ) : (
-                    <img
-                      src={url}
-                      alt={`Receipt ${index + 1}`}
-                      className="w-full h-20 object-cover rounded border"
-                    />
+                    <img src={url} alt={`Receipt ${index + 1}`} className="w-full h-20 object-cover rounded border border-[#3e3e42]" />
                   )}
                   <button
                     type="button"
                     onClick={() => removeExistingImage(index)}
-                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 bg-[#c72e2e] text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -306,24 +306,19 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
             {previewUrls.map((url, index) => {
               const file = newFiles[index];
               const isPdf = file?.type === 'application/pdf';
-              
               return (
                 <div key={index} className="relative group">
                   {isPdf ? (
-                    <div className="w-full h-20 object-cover rounded border bg-gray-100 flex items-center justify-center">
-                      <span className="text-xs text-gray-600">PDF</span>
+                    <div className="w-full h-20 object-cover rounded border border-[#3e3e42] bg-[#3c3c3c] flex items-center justify-center">
+                      <span className="text-xs text-[#858585]">PDF</span>
                     </div>
                   ) : (
-                    <img
-                      src={url}
-                      alt={`New ${index + 1}`}
-                      className="w-full h-20 object-cover rounded border"
-                    />
+                    <img src={url} alt={`New ${index + 1}`} className="w-full h-20 object-cover rounded border border-[#3e3e42]" />
                   )}
                   <button
                     type="button"
                     onClick={() => removeNewFile(index)}
-                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 bg-[#c72e2e] text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -346,114 +341,85 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
         <button
           type="button"
           onClick={() => document.getElementById('image-upload')?.click()}
-          className="inline-flex items-center gap-2 px-4 py-2 border border-dashed border-gray-300 rounded-md text-sm text-gray-600 hover:border-gray-400 hover:bg-gray-50"
+          className="inline-flex items-center gap-2 px-4 py-2 border border-dashed border-[#3e3e42] rounded-md text-sm text-[#858585] hover:border-[#4fc1ff] hover:text-[#d4d4d4] transition-colors"
         >
           <Upload className="w-4 h-4" />
           Upload Files
         </button>
-        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP, PDF. Max 50MB each.</p>
+        <p className="text-xs text-[#858585] mt-1">JPEG, PNG, WebP, PDF. Max 50MB each.</p>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Text {!hasAnyImage && <span className="text-red-500">*</span>}
+        <label className={labelClass}>
+          Text {!hasAnyImage && <span className="text-red-400">*</span>}
         </label>
         <textarea
           {...register('text')}
           rows={3}
-          className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={inputClass}
           placeholder="Receipt text or payment details"
         />
-        {errors.text && <p className="text-red-500 text-xs mt-1">{errors.text.message}</p>}
+        {errors.text && <p className="text-red-400 text-xs mt-1">{errors.text.message}</p>}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">User Tag</label>
-          <input
-            {...register('userTag')}
-            type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="user#0000"
-          />
+          <label className={labelClass}>User Tag</label>
+          <input {...register('userTag')} type="text" className={inputClass} placeholder="user#0000" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
-          <input
-            {...register('userId')}
-            type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Discord user ID"
-          />
+          <label className={labelClass}>User ID</label>
+          <input {...register('userId')} type="text" className={inputClass} placeholder="Discord user ID" />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Message ID</label>
-          <input
-            {...register('messageId')}
-            type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Discord message ID"
-          />
+          <label className={labelClass}>Message ID</label>
+          <input {...register('messageId')} type="text" className={inputClass} placeholder="Discord message ID" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Channel ID</label>
-          <input
-            {...register('channelId')}
-            type="text"
-            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Discord channel ID"
-          />
+          <label className={labelClass}>Channel ID</label>
+          <input {...register('channelId')} type="text" className={inputClass} placeholder="Discord channel ID" />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Timestamp</label>
-          <input
-            {...register('timestamp')}
-            type="datetime-local"
-            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <label className={labelClass}>Timestamp</label>
+          <input {...register('timestamp')} type="datetime-local" className={inputClass} />
         </div>
         <div className="flex items-center mt-6">
           <input
             {...register('isDm')}
             type="checkbox"
             id="isDm"
-            className="w-4 h-4 rounded border-gray-300"
+            className="w-4 h-4 rounded border-[#3e3e42] bg-[#3c3c3c] accent-[#4fc1ff]"
           />
-          <label htmlFor="isDm" className="ml-2 text-sm text-gray-700">From DM</label>
+          <label htmlFor="isDm" className="ml-2 text-sm text-[#d4d4d4]">From DM</label>
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Tax</label>
-          <input
-            {...register('tax')}
-            type="number"
-            className="w-full px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="0"
-          />
+        <label className={labelClass}>Tax</label>
+        <input {...register('tax')} type="number" className={inputClass} placeholder="0" />
       </div>
 
       {/* Extracted Items */}
       <div>
         <div className="flex justify-between items-center mb-2">
-          <label className="block text-sm font-medium text-gray-700">Items</label>
+          <label className={labelClass}>Items</label>
           <button
             type="button"
             onClick={() => append({ name: '', price: 0, quantity: 1 })}
-            className="text-xs text-blue-600 hover:text-blue-800"
+            className="text-xs text-[#4fc1ff] hover:text-[#d4d4d4] transition-colors"
           >
             + Add Item
           </button>
         </div>
-        
+
         {fields.length === 0 ? (
-          <p className="text-sm text-gray-400 italic py-2">No items added</p>
+          <p className="text-sm text-[#858585] italic py-2">No items added</p>
         ) : (
           <div className="space-y-2">
             {fields.map((field, index) => (
@@ -461,24 +427,24 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
                 <input
                   {...register(`items.${index}.name` as const)}
                   placeholder="Item name"
-                  className="flex-1 px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 bg-[#3c3c3c] border border-[#3e3e42] rounded-md text-sm text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#4fc1ff] placeholder-[#858585]"
                 />
                 <input
                   {...register(`items.${index}.price` as const)}
                   type="number"
                   placeholder="Price"
-                  className="w-24 px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-24 px-3 py-2 bg-[#3c3c3c] border border-[#3e3e42] rounded-md text-sm text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#4fc1ff] placeholder-[#858585]"
                 />
                 <input
                   {...register(`items.${index}.quantity` as const)}
                   type="number"
                   placeholder="Qty"
-                  className="w-16 px-3 py-2 border rounded-md text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-16 px-3 py-2 bg-[#3c3c3c] border border-[#3e3e42] rounded-md text-sm text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#4fc1ff] placeholder-[#858585]"
                 />
                 <button
                   type="button"
                   onClick={() => remove(index)}
-                  className="px-2 py-2 text-red-500 hover:text-red-700"
+                  className="px-2 py-2 text-red-400 hover:text-red-300 transition-colors"
                 >
                   ×
                 </button>
@@ -492,14 +458,14 @@ export default function ExpenseForm({ initialData, mode = 'edit' }: ExpenseFormP
         <button
           type="submit"
           disabled={isSubmitting}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 bg-[#0e639c] text-white text-sm rounded-md hover:bg-[#1177bb] disabled:opacity-50 transition-colors"
         >
           {isSubmitting ? 'Saving...' : mode === 'create' ? 'Create Expense' : 'Save Changes'}
         </button>
         <button
           type="button"
-          onClick={() => router.back()}
-          className="px-4 py-2 border border-gray-300 text-sm rounded-md hover:bg-gray-50 transition-colors"
+          onClick={() => onClose ? onClose() : router.back()}
+          className="px-4 py-2 border border-[#3e3e42] text-[#d4d4d4] text-sm rounded-md hover:bg-[#2a2d2e] transition-colors"
         >
           Cancel
         </button>

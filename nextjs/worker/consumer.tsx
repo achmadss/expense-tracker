@@ -374,12 +374,15 @@ async function start() {
 
   console.log('Waiting for messages...');
 
+  channel.prefetch(1);
   channel.consume(process.env.RABBITMQ_QUEUE || 'expense_processing', async (msg) => {
     if (msg) {
       try {
         const data = JSON.parse(msg.content.toString());
         console.log('Processing expense:', data.messageId);
         await processExpense(data);
+        // Rate limit: 3.5s delay before ack so next message waits
+        await new Promise(resolve => setTimeout(resolve, 3500));
         channel.ack(msg);
       } catch (error) {
         console.error('Error:', error);

@@ -31,8 +31,6 @@ services:
         condition: service_healthy
     volumes:
       - ./nextjs/config:/app/config:ro
-    command: >
-      sh -c "bunx prisma db push && bun run worker/consumer.tsx & bun --bun server.js"
 
   rabbitmq:
     image: rabbitmq:3-management
