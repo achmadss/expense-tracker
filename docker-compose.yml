@@ -93,6 +93,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    volumes:
+      - paddleocr_models:/root/.paddleocr
 
   litellm:
     image: docker.litellm.ai/berriai/litellm:main-stable
@@ -176,6 +178,8 @@ volumes:
   rabbitmq_data:
     driver: local
   minio_data:
+    driver: local
+  paddleocr_models:
     driver: local
 
 networks:
